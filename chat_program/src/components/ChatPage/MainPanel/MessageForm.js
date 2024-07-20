@@ -13,10 +13,13 @@ function MessageForm() {
 	const [error, setError] = useState([]);
 	const [loading, setLoading] = useState(false);
 	const [percentage, setPercentage] = useState(0);
+
 	const messagesRef = firebase.ref(firebase.getDatabase(), 'messages');
+	const typingRef = firebase.ref(firebase.getDatabase(), 'typing');
 	
 	const user = useSelector(state => state.user.currentUser);
 	const chatRoom = useSelector(state => state.chatRoom.currentChatRoom);
+	const isPrivateChatRoom = useSelector(state => state.chatRoom.isPrivateChatRoom);
 	
 	const inputOpenImageRef = useRef();
 	
@@ -50,11 +53,18 @@ function MessageForm() {
 	const handleImageOpenRef = () => {
 		inputOpenImageRef.current.click();
 	} 
+	//채팅방 공개여부에 의해 storage 경로 결정
+	const getPath = () => {
+		if(isPrivateChatRoom) return `message/private/${chatRoom.id}`;
+		else return `message/public`;
+		
+	}
 	const handleUploadImage = (e) => {
 		const file = e.target.files[0];
 		const metadata = {contentType: mime.getType(file.name)};
-		const filePath = `message/public/${file.name}`;
+		const filePath = `${getPath()}/${file.name}`;
 		
+		//storage에 사진 업로드
 		const storageRef = firebase.strRef(firebase.getStorage(), filePath);
 		const uploadTask = firebase.uploadBytesResumable(storageRef, file, metadata);
 		
@@ -94,12 +104,32 @@ function MessageForm() {
 		
 		return message;
 	}
+
+	//데이터베이스에 타이핑 중인 유저 기록
+	const handleKeyDown = e => {
+		if(e.ctrlKey && e.key === 'Enter')
+			handleSubmit();
+		if(content) {
+			firebase.set(firebase.child(typingRef, `${chatRoom.id}/${user.uid}`),
+				user.displayName
+			);
+		}
+		else {
+			firebase.remove(firebase.child(typingRef, `${chatRoom.id}/${user.uid}`));
+		}
+	}
 	
 	return(
 		<div>
 			<Form onSubmit={handleSubmit}>
 				<Form.Group className="mb-3" controlId="exampleForm.ControlTextarea1">
-					<Form.Control as="textarea" rows={3} value={content} onChange={handleChange} />
+					<Form.Control 
+						as="textarea" 
+						rows={3} 
+						value={content} 
+						onChange={handleChange} 
+						onKeyDown={handleKeyDown}
+					/>
 				</Form.Group>
 			</Form>
 			

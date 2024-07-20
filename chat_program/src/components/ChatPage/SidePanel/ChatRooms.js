@@ -1,11 +1,13 @@
 import React, { Component } from 'react';
+import firebase from '../../../firebase';
+import { connect } from 'react-redux';
+import { setCurrentChatRoom, setPrivateChatRoom } from '../../../redux/actions/chatRoom_action';
+
 import { FaRegSmileWink, FaPlus } from 'react-icons/fa';
 import Button from 'react-bootstrap/Button';
 import Modal from 'react-bootstrap/Modal';
 import Form from 'react-bootstrap/Form';
-import firebase from '../../../firebase';
-import { connect } from 'react-redux';
-import { setCurrentChatRoom } from '../../../redux/actions/chatRoom_action';
+import Badge from 'react-bootstrap/Badge';
 
 class ChatRooms extends Component {
 	state = {
@@ -13,9 +15,11 @@ class ChatRooms extends Component {
 		name: "",
 		description: "",
 		chatRoomsRef: firebase.ref(firebase.getDatabase(), 'chatRooms'),
+		messagesRef: firebase.ref(firebase.getDatabase(), 'messages'),
 		chatRooms: [],
 		firstLoad: true,
-		activeChatRoomId: ""
+		activeChatRoomId: "",
+		notifications: []
 	};
 	
 	handleClose = () => {
@@ -59,28 +63,88 @@ class ChatRooms extends Component {
 	//컴포넌트 mount되면서 자동 실행
 	componentDidMount() {
 		this.addChatRoomsListener();
+	}	
+
+	componentDidUpdate(prevProps) {
+		if(prevProps.currentChatRoom) {
+			if(prevProps.currentChatRoom.id !== this.props.currentChatRoom.id) {
+				this.setState({activeChatRoomId: this.props.currentChatRoom.id});
+			}
+		}
 	}
-	//컴포넌트 unmount되면서 자동 실행
-	componentWillUnmount() {
-		
-	}
-	
 	
 	addChatRoomsListener = () => {
 		let chatRoomsArray = [];
-		firebase.onChildAdded(this.state.chatRoomsRef, (snapshot) => {
+		firebase.onChildAdded(this.state.chatRoomsRef, snapshot => {
 			chatRoomsArray.push(snapshot.val());
 			this.setState({chatRooms: chatRoomsArray}, () => {
-				this.setFirstChatRoom();
+				// this.setFirstChatRoom();
+				this.setFirstChatRoom(snapshot.key);
 			});
+			// this.addNotificationListener(snapshot.key);
 		});
 	}
-	setFirstChatRoom = () => {
+
+	//미확인 메세지 관리 리스너
+	addNotificationListener = (chatRoomId) => {
+		if(this.props.currentChatRoom) {
+			firebase.onValue(firebase.child(this.state.messagesRef, chatRoomId), snapshot => {
+				this.handleNotification(
+					chatRoomId,
+					this.props.currentChatRoom.id,
+					this.state.notifications,
+					snapshot
+				);
+			});
+		}
+	}
+	handleNotification = (chatRoomId, currentChatRoomId, notifications, snapshot) => {
+
+		let lastTotal = 0;
+
+		let index = notifications.findIndex(notification => notification.id === chatRoomId);
+
+		//notification에 해당 방 ID 없음(신규로 생성된 방, notification 생성 이후 만들어진 방)
+		if(index === -1) {
+			notifications.push({
+				id: chatRoomId,
+				total: snapshot.size,
+				lastKnownTotal: snapshot.size,
+				count: 0
+			})
+		}
+		//notification에 방 정보 존재
+		else {
+			if(currentChatRoomId !== chatRoomId) {
+				lastTotal = notifications[index].lastKnownTotal;
+				if(snapshot.size > lastTotal) {
+					notifications[index].count = snapshot.size - lastTotal;
+					notifications[index].total = snapshot.size;
+				}
+			}
+		}
+
+		this.setState({notifications});
+	}
+	getNotificationCount = (chatRoom) => {
+		let count = 0;
+
+		this.state.notifications.forEach(notification => {
+			if(notification.id === chatRoom.id) {
+				count = notification.count;
+			}
+		})
+		if(count > 0) return count;
+	}
+
+	setFirstChatRoom = (chatRoomId) => {
 		const firstChatRoom = this.state.chatRooms[0];
-		const { setStoreRoom } = this.props;
+		const { setStoreRoom } = this.props;	
 		if(this.state.chatRooms.length 	> 0 && this.state.firstLoad) {
 			setStoreRoom(firstChatRoom);
-			this.setState({firstLoad: false, activeChatRoomId: firstChatRoom.id});
+			this.setState({firstLoad: false, activeChatRoomId: firstChatRoom.id}, () => {
+				this.addNotificationListener(chatRoomId);
+			});
 		}
 	}
 	renderChatRooms = (chatRooms) => 
@@ -91,12 +155,26 @@ class ChatRooms extends Component {
 				style={{backgroundColor: chatRoom.id === this.state.activeChatRoomId && "#FFFFFF45"}}
 			>
 				# { chatRoom.name }
+				<Badge variant="danger" style={{ float: 'right' , marginTop: '4px'}}>{this.getNotificationCount(chatRoom)}</Badge>
 			</li>
 		))
 	changeChatRoom = (chatRoom) => {
-		const { setStoreRoom } = this.props;
+		const { setStoreRoom, setPrivateRoom } = this.props;
 		setStoreRoom(chatRoom);
+		setPrivateRoom(false);
 		this.setState({ activeChatRoomId: chatRoom.id });
+		this.clearNotification(chatRoom.id);
+	}
+	clearNotification = (chatRoomId) => {
+		let index = this.state.notifications.findIndex(notification => 
+			notification.id === chatRoomId
+		)
+		if(index !== -1) {
+			let updatedNotifications = [...this.state.notifications];
+			updatedNotifications[index].lastKnownTotal = this.state.notifications[index].total;
+			updatedNotifications[index].count = 0;
+			this.setState({notifications: updatedNotifications});
+		}
 	}
 
 	render() {
@@ -170,13 +248,16 @@ class ChatRooms extends Component {
 
 const mapStateToProps = (state) => {
 	return {
-		currentUser: state.user.currentUser
+		currentUser: state.user.currentUser,
+		currentChatRoom: state.chatRoom.currentChatRoom,
+		isPrivate: state.chatRoom.isPrivateChatRoom
 	}
 }
 
 const mapDispatchToProps = (dispatch) => {
 	return {
-		setStoreRoom: (chatRoom) => dispatch(setCurrentChatRoom(chatRoom))
+		setStoreRoom: (chatRoom) => dispatch(setCurrentChatRoom(chatRoom)),
+		setPrivateRoom: (isPrivate) => dispatch(setPrivateChatRoom(isPrivate))
 	}
 }
 

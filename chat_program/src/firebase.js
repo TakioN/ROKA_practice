@@ -8,8 +8,26 @@ import {
 	onAuthStateChanged,
 	signOut
 } from 'firebase/auth';
-import { getDatabase, ref, set, child, update, push, onChildAdded, serverTimestamp } from 'firebase/database';
-import { getStorage, ref as strRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
+import { getDatabase,
+	ref,
+	set,
+	child,
+	update,
+	push,
+	onChildAdded,
+	serverTimestamp,
+	onValue,
+	remove,
+	get,
+	onChildRemoved
+} from 'firebase/database';
+import { 
+	getStorage,
+	ref as strRef, 
+	uploadBytes, 
+	getDownloadURL, 
+	uploadBytesResumable 
+} from 'firebase/storage';
 
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -49,6 +67,10 @@ const firebase = {
 	push,
 	onChildAdded,
 	serverTimestamp,
-	uploadBytesResumable
+	uploadBytesResumable,
+	onValue,
+	remove,
+	get,
+	onChildRemoved
 }
 export default firebase;
